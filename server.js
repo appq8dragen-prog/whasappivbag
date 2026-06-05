@@ -6,8 +6,9 @@ const bodyParser = require('body-parser');
 const app = express();
 app.use(bodyParser.json());
 
-// إعداد عميل الواتساب مع حفظ الجلسة وتخطي قيود سيرفرات اللينكس
+// إعداد عميل الواتساب وتخطي قيود السيرفرات
 const client = new Client({
+    authStrategy: new LocalAuth(),
     puppeteer: {
         headless: true,
         args: [
@@ -18,60 +19,40 @@ const client = new Client({
         ],
         executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || null
     }
-});    authStrategy: new LocalAuth(),
-    puppeteer: {
-        headless: true,
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--no-first-run',
-            '--no-zygote',
-            '--single-process',
-            '--disable-gpu'
-        ]
-    }
 });
 
-// توليد الـ QR Code في الـ Terminal عند التشغيل لأول مرة
+// توليد الـ QR Code في الـ Logs عند تشغيل السيرفر
 client.on('qr', (qr) => {
-    console.log('▼ امسح الـ QR Code التالي برقم الواتساب الخاص بك ▼');
+    console.log('=== قـم بـمـسـح الـرمـز الـتـالـي بـواسـطـة الـواتـسـاب ===');
     qrcode.generate(qr, { small: true });
 });
 
+// عند اتصال الحساب بنجاح
 client.on('ready', () => {
-    console.log('✅ تم تشغيل السيرفر والواتساب متصل وجاهز لإرسال الرسائل!');
+    console.log('Client is ready - الواتساب جاهز ومتصل الآن!');
 });
 
-// الرابط المخصص لاستقبال الطلبات من الووردبريس
+// استقبال أوامر الإرسال من الووردبريس
 app.post('/send-whatsapp', async (req, res) => {
-    const { phone, message } = req.body;
-
-    if (!phone || !message) {
-        return res.status(400).json({ success: false, error: 'الرقم ونص الرسالة مطلوبان.' });
+    const { number, message } = req.body;
+    if (!number || !message) {
+        return res.status(400).json({ status: 'error', message: 'المعطيات ناقصة' });
     }
 
     try {
-        // تنظيف رقم الهاتف وصياغته بالشكل الصحيح للواتساب
-        let cleanPhone = phone.replace(/\D/g, ''); 
-        
-        if (!cleanPhone.endsWith('@c.us')) {
-            cleanPhone = `${cleanPhone}@c.us`;
-        }
-
-        await client.sendMessage(cleanPhone, message);
-        res.json({ success: true, message: 'تم إرسال رسالة الواتساب بنجاح.' });
+        const formattedNumber = number.includes('@c.us') ? number : `${number}@c.us`;
+        await client.sendMessage(formattedNumber, message);
+        res.json({ status: 'success', message: 'تم إرسال الرسالة بنجاح' });
     } catch (error) {
-        console.error('خطأ أثناء إرسال الرسالة:', error);
-        res.status(500).json({ success: false, error: error.message });
+        res.status(500).json({ status: 'error', message: error.message });
     }
 });
 
-// المنفذ الافتراضي للتشغيل
-const PORT = process.env.PORT || 3000;
+// تشغيل السيرفر على المنفذ المطلوب لـ Render
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
     console.log(`السيرفر يعمل الآن على المنفذ: ${PORT}`);
 });
 
+// بدء تشغيل عميل الواتساب
 client.initialize();
